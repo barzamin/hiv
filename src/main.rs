@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use wgpu::include_wgsl;
+use wgpu::include_spirv;
 use winit::{
     dpi::PhysicalSize,
     event::{Event, WindowEvent},
@@ -61,8 +61,8 @@ impl GfxState {
             //     flags: wgpu::ShaderFlags::all(),
             //     source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
             // });
-            
-            let shader = device.create_shader_module(&include_wgsl!("shader.wgsl"));
+
+            let shader = device.create_shader_module(&include_spirv!(env!("shaders.spv")));
             let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("render pipeline layout"),
                 bind_group_layouts: &[],
@@ -74,12 +74,12 @@ impl GfxState {
                 layout: Some(&render_pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "main_vs",
                     buffers: &[],
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "main",
+                    entry_point: "main_fs",
                     targets: &[
                         wgpu::ColorTargetState {
                             format: sc_desc.format,
@@ -139,7 +139,7 @@ impl GfxState {
             .swapchain
             .get_current_frame()?
             .output;
-        
+
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("render encoder"),
         });

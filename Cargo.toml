@@ -3,6 +3,10 @@ name = "hiv"
 version = "0.1.0"
 edition = "2018"
 
+
+[workspace]
+members = ["shaders"]
+
 [dependencies]
 anyhow = "1.0"
 winit = "0.25"
@@ -10,4 +14,4 @@ wgpu = "0.9"
 pollster = "0.2"
 
 [build-dependencies]
-spirv-builder = { git = "https://github.com/EmbarkStudios/rust-gpu", rev = "b9867d0e" }
+spirv-builder = { git = "https://github.com/EmbarkStudios/rust-gpu", rev = "b9867d0e84d29d6e60ad62427f453b4829abda56" }

@@ -1,3 +1,4 @@
+# pin for rust-gpu@b9867d0e
 [toolchain]
 channel = "nightly-2021-06-09"
 components = ["rust-src", "rustc-dev", "llvm-tools-preview"]
