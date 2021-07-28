@@ -41,12 +41,12 @@ impl GfxState {
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
+                    label: None,
                     features: wgpu::Features::PUSH_CONSTANTS,
                     limits: wgpu::Limits {
                         max_push_constant_size: 256,
                         ..Default::default()
                     },
-                    label: None,
                 },
                 None,
             )
@@ -65,6 +65,7 @@ impl GfxState {
 
         let render_pipeline = {
             let shader = device.create_shader_module(&include_spirv!(env!("shaders.spv")));
+
             let render_pipeline_layout =
                 device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("render pipeline layout"),
@@ -129,7 +130,7 @@ impl GfxState {
     fn resize(&mut self, new_size: PhysicalSize<u32>) {
         self.size = new_size;
         self.sc_desc.width = new_size.width;
-        self.sc_desc.height = new_size.width;
+        self.sc_desc.height = new_size.height;
         self.swapchain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
     }
 
