@@ -1,4 +1,7 @@
+use std::time::Instant;
+
 use anyhow::{anyhow, Result};
+use shaders::ShaderConstants;
 use wgpu::include_spirv;
 use winit::{
     dpi::PhysicalSize,
@@ -18,6 +21,8 @@ struct GfxState {
     size: PhysicalSize<u32>,
 
     render_pipeline: wgpu::RenderPipeline,
+
+    t0: Instant,
 }
 
 impl GfxState {
@@ -36,8 +41,11 @@ impl GfxState {
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
-                    features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::default(),
+                    features: wgpu::Features::PUSH_CONSTANTS,
+                    limits: wgpu::Limits {
+                        max_push_constant_size: 256,
+                        ..Default::default()
+                    },
                     label: None,
                 },
                 None,
@@ -55,19 +63,17 @@ impl GfxState {
         };
         let swapchain = device.create_swap_chain(&surface, &sc_desc);
 
-        let render_pipeline= {
-            // let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            //     label: Some("shader"),
-            //     flags: wgpu::ShaderFlags::all(),
-            //     source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-            // });
-
+        let render_pipeline = {
             let shader = device.create_shader_module(&include_spirv!(env!("shaders.spv")));
-            let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("render pipeline layout"),
-                bind_group_layouts: &[],
-                push_constant_ranges: &[],
-            });
+            let render_pipeline_layout =
+                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("render pipeline layout"),
+                    bind_group_layouts: &[],
+                    push_constant_ranges: &[wgpu::PushConstantRange {
+                        stages: wgpu::ShaderStage::all(),
+                        range: 0..std::mem::size_of::<ShaderConstants>() as u32,
+                    }],
+                });
 
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("render pipeline"),
@@ -80,13 +86,11 @@ impl GfxState {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "main_fs",
-                    targets: &[
-                        wgpu::ColorTargetState {
-                            format: sc_desc.format,
-                            blend: Some(wgpu::BlendState::REPLACE),
-                            write_mask: wgpu::ColorWrite::ALL,
-                        },
-                    ],
+                    targets: &[wgpu::ColorTargetState {
+                        format: sc_desc.format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrite::ALL,
+                    }],
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
@@ -102,9 +106,11 @@ impl GfxState {
                     count: 1,
                     mask: !0, // all samples
                     alpha_to_coverage_enabled: false,
-                }
+                },
             })
         };
+
+        let t0 = Instant::now();
 
         Ok(Self {
             size,
@@ -115,7 +121,8 @@ impl GfxState {
             queue,
             sc_desc,
             swapchain,
-            render_pipeline
+            render_pipeline,
+            t0,
         })
     }
 
@@ -135,37 +142,45 @@ impl GfxState {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SwapChainError> {
-        let frame = self
-            .swapchain
-            .get_current_frame()?
-            .output;
+        let frame = self.swapchain.get_current_frame()?.output;
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("render encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("render encoder"),
+            });
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear pass"),
-                color_attachments: &[
-                    wgpu::RenderPassColorAttachment {
-                        view: &frame.view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.1,
-                                g: 0.2,
-                                b: 0.3,
-                                a: 1.0,
-                            }),
-                            store: true,
-                        }
-                    }
-                ],
+                color_attachments: &[wgpu::RenderPassColorAttachment {
+                    view: &frame.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 1.0,
+                        }),
+                        store: true,
+                    },
+                }],
                 depth_stencil_attachment: None,
             });
 
+            let push_constants = ShaderConstants {
+                width_px: self.sc_desc.width,
+                height_px: self.sc_desc.height,
+                time: self.t0.elapsed().as_secs_f32(),
+            };
+
             render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_push_constants(
+                wgpu::ShaderStage::all(),
+                0,
+                bytemuck::bytes_of(&push_constants),
+            );
             render_pass.draw(0..3, 0..1);
         }
 
@@ -208,7 +223,7 @@ fn main() -> Result<()> {
             Event::RedrawRequested(_) => {
                 gfx_state.update();
                 match gfx_state.render() {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(wgpu::SwapChainError::Lost) => gfx_state.resize(gfx_state.size), // recreate swapchain if lost
                     Err(wgpu::SwapChainError::OutOfMemory) => *ctl_flow = ControlFlow::Exit, // quit on GPU OOM
                     Err(e) => eprintln!("swap chain error: {:?}", e), // lmao don't do anything fuck swapchain errors ;3
