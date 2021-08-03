@@ -52,6 +52,10 @@ impl GfxState {
             )
             .await?;
 
+        device.on_uncaptured_error(|error| {
+            panic!("uncaptured wgpu error: {:#?}", error);
+        });
+
         let sc_desc = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
             format: adapter

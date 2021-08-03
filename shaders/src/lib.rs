@@ -10,10 +10,11 @@
 use spirv_std::macros::spirv;
 
 #[cfg(target_arch = "spirv")] // if building no_std
+#[allow(unused_imports)]
 use spirv_std::num_traits::Float;
 
 #[allow(unused_imports)]
-use spirv_std::glam::{vec2, vec4, Vec2, Vec4};
+use spirv_std::glam::{vec2, vec3, vec4, Vec2, Vec3, Vec4};
 
 use bytemuck::{Pod, Zeroable};
 
@@ -26,6 +27,32 @@ pub struct ShaderConstants {
     pub time: f32,
 }
 
+pub fn scene(pos: Vec3) -> f32 {
+    (pos - vec3(0., 0., 10.)).length() - 3.0
+}
+
+const STEP_CNT: u32 = 16;
+const THRESH: f32 = 0.001;
+pub fn raycast(p0: Vec3, ray: Vec3) -> (u32, f32) {
+    let mut t = 0f32;
+    for i in 0..STEP_CNT {
+        let dist = scene(p0 + ray * t);
+        if dist <= THRESH * t {
+            return (i, t);
+        }
+
+        t += dist;
+    }
+
+    (STEP_CNT, -1.0)
+}
+
+fn render(p0: Vec3, ray: Vec3) -> Vec3 {
+    let (_iters, t) = raycast(p0, ray);
+
+    Vec3::splat(1. - t * 0.075)
+}
+
 #[allow(unused_variables)]
 #[spirv(fragment)]
 pub fn main_fs(
@@ -34,8 +61,25 @@ pub fn main_fs(
     output: &mut Vec4,
 ) {
     let frag_coord = in_frag_coord.truncate().truncate();
+    let uv = (frag_coord - 0.5 * vec2(constants.width_px as f32, constants.height_px as f32))
+        / constants.height_px as f32;
 
-    *output = vec4(constants.time.cos()*0.5 + 0.5, 0., 0., 1.);
+    let cam_pos = vec3(0., 0., -1.);
+    let cam_tgt = vec3(0., 0., 0.);
+
+    let ray_dir = {
+        let cam_fwd = (cam_tgt - cam_pos).normalize();
+        // crossing the forward direction with world up gives right
+        let cam_rgt = vec3(0., 1., 0.).cross(cam_fwd).normalize();
+        let cam_up = cam_fwd.cross(cam_rgt).normalize();
+
+        let cam_persp = 2.0; // control FoV
+
+        uv.x * cam_rgt + uv.y * cam_up + cam_fwd * cam_persp
+    };
+
+    *output = render(cam_pos, ray_dir).extend(1.);
+    // *output = ray_dir.extend(1.);
 }
 
 #[spirv(vertex)]
