@@ -2,7 +2,6 @@ use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 use shaders::ShaderConstants;
-use wgpu::include_spirv;
 use winit::{
     dpi::PhysicalSize,
     event::{Event, WindowEvent},
@@ -68,7 +67,11 @@ impl GfxState {
         let swapchain = device.create_swap_chain(&surface, &sc_desc);
 
         let render_pipeline = {
-            let shader = device.create_shader_module(&include_spirv!(env!("shaders.spv")));
+            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                label: Some("shaders/lib.rs"),
+                source: wgpu::util::make_spirv(include_bytes!(env!("shaders.spv"))),
+                flags: wgpu::ShaderFlags::empty(), // don't validate; LLVM (probably) knows better than wgpu :3
+            });
 
             let render_pipeline_layout =
                 device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
