@@ -61,8 +61,8 @@ pub fn main_fs(
     output: &mut Vec4,
 ) {
     let frag_coord = in_frag_coord.truncate().truncate();
-    let uv = (frag_coord - 0.5 * vec2(constants.width_px as f32, constants.height_px as f32))
-        / constants.height_px as f32;
+    let mut uv = 2.0 * (frag_coord / vec2(constants.width_px as f32, constants.height_px as f32) - Vec2::splat(0.5));
+    uv.x *= constants.width_px as f32 / constants.height_px as f32;
 
     let cam_pos = vec3(0., 0., -1.);
     let cam_tgt = vec3(0., 0., 0.);
@@ -75,7 +75,7 @@ pub fn main_fs(
 
         let cam_persp = 2.0; // control FoV
 
-        uv.x * cam_rgt + uv.y * cam_up + cam_fwd * cam_persp
+        (uv.x * cam_rgt + uv.y * cam_up + cam_fwd * cam_persp).normalize()
     };
 
     *output = render(cam_pos, ray_dir).extend(1.);
