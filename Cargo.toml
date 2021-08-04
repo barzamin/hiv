@@ -2,18 +2,11 @@
 name = "hiv"
 version = "0.1.0"
 edition = "2018"
-
-
-[workspace]
-members = ["shaders"]
+resolver = "2"
 
 [dependencies]
 anyhow = "1.0"
 winit = "0.25"
-wgpu = "0.9"
+wgpu = { git = "https://github.com/gfx-rs/wgpu" }
 pollster = "0.2"
-bytemuck = "1.7"
-shaders = { path = "./shaders" }
-
-[build-dependencies]
-spirv-builder = { git = "https://github.com/EmbarkStudios/rust-gpu", rev = "b9867d0e84d29d6e60ad62427f453b4829abda56" }
+bytemuck = { version = "1.7", features = ["derive"] }
