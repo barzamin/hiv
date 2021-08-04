@@ -53,6 +53,47 @@ fn render(p0: Vec3, ray: Vec3) -> Vec3 {
     Vec3::splat(1. - t * 0.075)
 }
 
+fn screen2uv(fragcoord: Vec4, ssize_px: Vec2) -> Vec2 {
+    let frag_coord = fragcoord.truncate().truncate();
+    let mut uv = 2.0 * frag_coord / ssize_px - Vec2::splat(1.);
+    uv.x *= ssize_px.x as f32 / ssize_px.y as f32;
+    uv
+}
+
+struct Camera {
+    pos: Vec3,
+    #[allow(dead_code)]
+    tgt: Vec3,
+    persp: f32,
+
+    fwd: Vec3,
+    rgt: Vec3,
+    up:  Vec3,
+}
+
+impl Camera {
+    pub fn new_pointing_at(pos: Vec3, tgt: Vec3, persp: f32) -> Self {
+        let fwd = (tgt - pos).normalize();
+        // crossing the forward direction with world up gives right
+        let rgt = vec3(0., 1., 0.).cross(fwd).normalize();
+        let up = fwd.cross(rgt).normalize();
+
+
+        Camera {
+            pos, tgt, persp,
+            fwd, rgt, up,
+        }
+    }
+
+    pub fn ray(&self, uv: Vec2) -> Vec3 {
+        (uv.x * self.rgt + uv.y * self.up + self.fwd * self.persp).normalize()
+    }
+
+    pub fn root(&self) -> Vec3 {
+        self.pos
+    }
+}
+
 #[allow(unused_variables)]
 #[spirv(fragment)]
 pub fn main_fs(
@@ -60,26 +101,12 @@ pub fn main_fs(
     #[spirv(push_constant)] constants: &ShaderConstants,
     output: &mut Vec4,
 ) {
-    let frag_coord = in_frag_coord.truncate().truncate();
-    let mut uv = 2.0 * (frag_coord / vec2(constants.width_px as f32, constants.height_px as f32) - Vec2::splat(0.5));
-    uv.x *= constants.width_px as f32 / constants.height_px as f32;
+    let ssize = vec2(constants.width_px as f32, constants.height_px as f32);
+    let uv = screen2uv(in_frag_coord, ssize);
 
-    let cam_pos = vec3(0., 0., -1.);
-    let cam_tgt = vec3(0., 0., 0.);
+    let cam = Camera::new_pointing_at(vec3(0., 0., -1.), vec3(0., 0., 0.), 2.);
 
-    let ray_dir = {
-        let cam_fwd = (cam_tgt - cam_pos).normalize();
-        // crossing the forward direction with world up gives right
-        let cam_rgt = vec3(0., 1., 0.).cross(cam_fwd).normalize();
-        let cam_up = cam_fwd.cross(cam_rgt).normalize();
-
-        let cam_persp = 2.0; // control FoV
-
-        (uv.x * cam_rgt + uv.y * cam_up + cam_fwd * cam_persp).normalize()
-    };
-
-    *output = render(cam_pos, ray_dir).extend(1.);
-    // *output = ray_dir.extend(1.);
+    *output = render(cam.root(), cam.ray(uv)).extend(1.);
 }
 
 #[spirv(vertex)]
