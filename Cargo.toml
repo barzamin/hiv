@@ -11,8 +11,12 @@ members = ["shaders"]
 anyhow = "1.0"
 winit = "0.25"
 wgpu = "0.9"
+imgui-wgpu = "0.16"
+imgui = "0.7"
+imgui-winit-support = { version = "0.7", features = ["winit-25"], default-features = false }
 pollster = "0.2"
 bytemuck = "1.7"
+notify = "4.0"
 shaders = { path = "./shaders" }
 
 [build-dependencies]

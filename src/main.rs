@@ -9,6 +9,7 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+#[allow(dead_code)]
 struct GfxState {
     instance: wgpu::Instance,
     surface: wgpu::Surface,
@@ -66,57 +67,55 @@ impl GfxState {
         };
         let swapchain = device.create_swap_chain(&surface, &sc_desc);
 
-        let render_pipeline = {
-            let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-                label: Some("shaders/lib.rs"),
-                source: wgpu::util::make_spirv(include_bytes!(env!("shaders.spv"))),
-                flags: wgpu::ShaderFlags::empty(), // don't validate; LLVM (probably) knows better than wgpu :3
+        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: Some("shaders/lib.rs"),
+            source: wgpu::util::make_spirv(include_bytes!(env!("shaders.spv"))),
+            flags: wgpu::ShaderFlags::empty(), // don't validate; LLVM (probably) knows better than wgpu :3
+        });
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("render pipeline layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[wgpu::PushConstantRange {
+                    stages: wgpu::ShaderStage::all(),
+                    range: 0..std::mem::size_of::<ShaderConstants>() as u32,
+                }],
             });
 
-            let render_pipeline_layout =
-                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("render pipeline layout"),
-                    bind_group_layouts: &[],
-                    push_constant_ranges: &[wgpu::PushConstantRange {
-                        stages: wgpu::ShaderStage::all(),
-                        range: 0..std::mem::size_of::<ShaderConstants>() as u32,
-                    }],
-                });
-
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("render pipeline"),
-                layout: Some(&render_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "main_vs",
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: "main_fs",
-                    targets: &[wgpu::ColorTargetState {
-                        format: sc_desc.format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrite::ALL,
-                    }],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Back),
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    clamp_depth: false,
-                    conservative: false,
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState {
-                    count: 1,
-                    mask: !0, // all samples
-                    alpha_to_coverage_enabled: false,
-                },
-            })
-        };
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("render pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "main_vs",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "main_fs",
+                targets: &[wgpu::ColorTargetState {
+                    format: sc_desc.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrite::ALL,
+                }],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                clamp_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0, // all samples
+                alpha_to_coverage_enabled: false,
+            },
+        });
 
         let t0 = Instant::now();
 
@@ -149,9 +148,7 @@ impl GfxState {
         // todo!();
     }
 
-    fn render(&mut self) -> Result<(), wgpu::SwapChainError> {
-        let frame = self.swapchain.get_current_frame()?.output;
-
+    fn render(&mut self, render_to: &wgpu::TextureView) {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -162,7 +159,7 @@ impl GfxState {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &frame.view,
+                    view: render_to,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -193,8 +190,6 @@ impl GfxState {
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
-
-        Ok(())
     }
 }
 
@@ -203,7 +198,23 @@ fn main() -> Result<()> {
     let window = WindowBuilder::new().build(&evt_loop)?;
 
     let mut gfx_state = pollster::block_on(GfxState::new(&window))?;
+    let mut imgui = imgui::Context::create();
+    let mut platform = imgui_winit_support::WinitPlatform::init(&mut imgui);
+    platform.attach_window(imgui.io_mut(), &window, imgui_winit_support::HiDpiMode::Default);
+    imgui.set_ini_filename(None);
 
+    let font_size = (13.0 * window.scale_factor()) as f32;
+    imgui.io_mut().font_global_scale = (1.0/window.scale_factor()) as f32;
+    imgui.fonts().add_font(&[imgui::FontSource::DefaultFontData {
+        config: Some(imgui::FontConfig {
+            oversample_h: 1,
+            pixel_snap_h: true,
+            size_pixels: font_size,
+            ..Default::default()
+        }),
+    }]);
+
+    let mut last_frame = Instant::now();
     evt_loop.run(move |event, _, ctl_flow| {
         match event {
             Event::WindowEvent {
@@ -229,9 +240,16 @@ fn main() -> Result<()> {
             }
 
             Event::RedrawRequested(_) => {
-                gfx_state.update();
-                match gfx_state.render() {
-                    Ok(_) => {}
+                let now = Instant::now();
+                let delta_s = now - last_frame;
+                imgui.io_mut().update_delta_time(delta_s);
+                last_frame = now;
+
+                match gfx_state.swapchain.get_current_frame() {
+                    Ok(frame) => {
+                        gfx_state.update();
+                        gfx_state.render(&frame.output.view);
+                    },
                     Err(wgpu::SwapChainError::Lost) => gfx_state.resize(gfx_state.size), // recreate swapchain if lost
                     Err(wgpu::SwapChainError::OutOfMemory) => *ctl_flow = ControlFlow::Exit, // quit on GPU OOM
                     Err(e) => eprintln!("swap chain error: {:?}", e), // lmao don't do anything fuck swapchain errors ;3
