@@ -193,14 +193,54 @@ impl GfxState {
     }
 }
 
+struct ImguiPipeline {
+    platform: imgui_winit_support::WinitPlatform,
+    renderer: imgui_wgpu::Renderer,
+}
+
+impl ImguiPipeline {
+    pub fn new(imgui: &mut imgui::Context, window: &Window, device: &wgpu::Device, queue: &wgpu::Queue, texture_format: wgpu::TextureFormat) -> Self {
+        let mut platform = imgui_winit_support::WinitPlatform::init(imgui);
+        platform.attach_window(imgui.io_mut(), &window, imgui_winit_support::HiDpiMode::Default);
+
+        let renderer = imgui_wgpu::Renderer::new(imgui, device, queue, imgui_wgpu::RendererConfig {
+            texture_format,
+            ..Default::default()
+        });
+
+        Self {
+            platform,
+            renderer,
+        }
+    }
+
+    pub fn render(&mut self, draw_data: &imgui::DrawData, device: &wgpu::Device, queue: &wgpu::Queue, target_tex: &wgpu::TextureView) {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("imgui command encoder") });
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("imgui render pass"),
+            color_attachments: &[wgpu::RenderPassColorAttachment {
+                view: target_tex,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load, // don't clear
+                    store: true,
+                },
+            }],
+            depth_stencil_attachment: None,
+        });
+        self.renderer.render(draw_data, queue, device, &mut rpass).expect("imgui couldn't render :(");
+        drop(rpass); // TODO
+
+        queue.submit(std::iter::once(encoder.finish()));
+    }
+}
+
 fn main() -> Result<()> {
     let evt_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&evt_loop)?;
 
     let mut gfx_state = pollster::block_on(GfxState::new(&window))?;
     let mut imgui = imgui::Context::create();
-    let mut im_platform = imgui_winit_support::WinitPlatform::init(&mut imgui);
-    im_platform.attach_window(imgui.io_mut(), &window, imgui_winit_support::HiDpiMode::Default);
     imgui.set_ini_filename(None);
 
     let font_size = (13.0 * window.scale_factor()) as f32;
@@ -213,11 +253,7 @@ fn main() -> Result<()> {
             ..Default::default()
         }),
     }]);
-
-    let mut im_renderer = imgui_wgpu::Renderer::new(&mut imgui, &gfx_state.device, &gfx_state.queue, imgui_wgpu::RendererConfig {
-        texture_format: gfx_state.sc_desc.format,
-        ..Default::default()
-    });
+    let mut im_pipe = ImguiPipeline::new(&mut imgui, &window, &gfx_state.device, &gfx_state.queue, gfx_state.sc_desc.format);
 
     let mut last_frame = Instant::now();
     let mut last_cursor = None;
@@ -253,7 +289,7 @@ fn main() -> Result<()> {
 
                 match gfx_state.swapchain.get_current_frame() {
                     Ok(frame) => {
-                        im_platform.prepare_frame(imgui.io_mut(), &window).expect("couldn't prepare imgui frame");
+                        im_pipe.platform.prepare_frame(imgui.io_mut(), &window).expect("couldn't prepare imgui frame");
 
                         gfx_state.update();
                         gfx_state.render(&frame.output.view);
@@ -262,27 +298,12 @@ fn main() -> Result<()> {
                         let mut op = true;
                         ui.show_demo_window(&mut op);
 
-                        let mut encoder = gfx_state.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("imgui command encoder") });
                         if last_cursor != Some(ui.mouse_cursor()) {
                             last_cursor = Some(ui.mouse_cursor());
-                            im_platform.prepare_render(&ui, &window);
+                            im_pipe.platform.prepare_render(&ui, &window);
                         }
-                        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("imgui render pass"),
-                            color_attachments: &[wgpu::RenderPassColorAttachment {
-                                view: &frame.output.view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Load, // don't clear
-                                    store: true,
-                                },
-                            }],
-                            depth_stencil_attachment: None,
-                        });
-                        im_renderer.render(ui.render(), &gfx_state.queue, &gfx_state.device, &mut rpass).expect("imgui couldn't render :(");
-                        drop(rpass); // TODO
 
-                        gfx_state.queue.submit(std::iter::once(encoder.finish()));
+                        im_pipe.render(ui.render(), &gfx_state.device, &gfx_state.queue, &frame.output.view);
                     },
                     Err(wgpu::SwapChainError::Lost) => gfx_state.resize(gfx_state.size), // recreate swapchain if lost
                     Err(wgpu::SwapChainError::OutOfMemory) => *ctl_flow = ControlFlow::Exit, // quit on GPU OOM
@@ -293,6 +314,6 @@ fn main() -> Result<()> {
             _ => (),
         }
 
-        im_platform.handle_event(imgui.io_mut(), &window, &event);
+        im_pipe.platform.handle_event(imgui.io_mut(), &window, &event);
     });
 }
