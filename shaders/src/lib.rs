@@ -2,7 +2,7 @@
     target_arch = "spirv",
     no_std,
     feature(register_attr, lang_items),
-    register_attr(spirv)
+    register_attr(spirv),
 )]
 #![deny(warnings)] // HACK(via:eddyb) warnings not easily exposed from spirv-builder otherwise
 

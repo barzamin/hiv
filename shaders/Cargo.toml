@@ -5,7 +5,7 @@ edition = "2018"
 publish = false
 
 [lib]
-crate-type = ["lib", "dylib"]
+crate-type = ["dylib", "rlib"]
 
 [dependencies]
 bytemuck = { version = "1.7", features = ["derive"] }

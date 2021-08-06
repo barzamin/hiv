@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use shaders::ShaderConstants;
+use crate::shaderffi::ShaderConstants;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 #[allow(dead_code)]
@@ -15,12 +15,57 @@ pub struct GfxState {
     pub swapchain: wgpu::SwapChain,
     pub size: PhysicalSize<u32>,
 
+    pub render_pipeline_layout: wgpu::PipelineLayout,
     pub render_pipeline: wgpu::RenderPipeline,
 
     pub t0: Instant,
 }
 
 impl GfxState {
+    fn construct_pipeline(layout: &wgpu::PipelineLayout, device: &wgpu::Device, shader: &wgpu::ShaderModule, fragment_format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("render pipeline"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "main_vs",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "main_fs",
+                targets: &[wgpu::ColorTargetState {
+                    format: fragment_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrite::ALL,
+                }],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                clamp_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0, // all samples
+                alpha_to_coverage_enabled: false,
+            },
+        })
+    }
+
+    fn build_shader_module(device: &wgpu::Device, spirv: &[u8]) -> wgpu::ShaderModule {
+        device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: Some("main pipeline ShaderModule"),
+            source: wgpu::util::make_spirv(spirv),
+            flags: wgpu::ShaderFlags::empty(), // don't validate; LLVM (probably) knows better than wgpu :3
+        })
+    }
+
     pub async fn new(window: &Window) -> Result<Self> {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
@@ -62,11 +107,7 @@ impl GfxState {
         };
         let swapchain = device.create_swap_chain(&surface, &sc_desc);
 
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-            label: Some("shaders/lib.rs"),
-            source: wgpu::util::make_spirv(include_bytes!(env!("shaders.spv"))),
-            flags: wgpu::ShaderFlags::empty(), // don't validate; LLVM (probably) knows better than wgpu :3
-        });
+        let shader = Self::build_shader_module(&device, include_bytes!(env!("shaders.spv")));
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -78,39 +119,7 @@ impl GfxState {
                 }],
             });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("render pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "main_vs",
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "main_fs",
-                targets: &[wgpu::ColorTargetState {
-                    format: sc_desc.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrite::ALL,
-                }],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                clamp_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0, // all samples
-                alpha_to_coverage_enabled: false,
-            },
-        });
+        let render_pipeline = Self::construct_pipeline(&render_pipeline_layout, &device, &shader, sc_desc.format);
 
         let t0 = Instant::now();
 
@@ -123,9 +132,15 @@ impl GfxState {
             queue,
             sc_desc,
             swapchain,
+            render_pipeline_layout,
             render_pipeline,
             t0,
         })
+    }
+
+    pub fn load_shader_code(&mut self, new_spirv: &[u8]) {
+        let shader = Self::build_shader_module(&self.device, new_spirv);
+        self.render_pipeline = Self::construct_pipeline(&self.render_pipeline_layout, &self.device, &shader, self.sc_desc.format);
     }
 
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {

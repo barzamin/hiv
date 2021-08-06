@@ -1,6 +1,13 @@
-use std::time::Instant;
+//! doggy park
+//!
+//! # Notes:
+//! - when dpi factor changes (move window), we should fixup imgui's scaling
+use std::{fs, path::Path, sync::{Arc, Mutex, mpsc::channel}, thread, time::{Duration, Instant}};
 
 use anyhow::Result;
+use notify::{RecursiveMode, Watcher};
+use spirv_builder::{MetadataPrintout, SpirvBuilder};
+use tracing::{Level, error, info, span};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -8,11 +15,57 @@ use winit::{
 };
 
 mod render;
+mod shaderffi;
 use render::{GfxState, ImguiPipeline};
 
 fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
+
     let evt_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&evt_loop)?;
+
+    // -- shader auto-reload watch & build thread
+    // potential improvements:
+    //  - instead of a Mutex<Option<T>>, consider using some sort of atomically-swappable container
+    let debounce = Duration::from_secs(5);
+    let (fs_tx, fs_rx) = channel();
+    let new_spirv: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
+    let mut watcher = notify::recommended_watcher(move |res| {
+        match res {
+            Ok(evt) => { fs_tx.send(evt).unwrap(); },
+            Err(err) => eprintln!("[shaders fswatch] error: {:?}", err),
+        }
+    })?;
+    watcher.watch(Path::new("./shaders"), RecursiveMode::Recursive)?;
+    let send_spirv = Arc::clone(&new_spirv);
+    thread::spawn(move || {
+        loop {
+            let _ = fs_rx.recv().unwrap(); // wait on one event
+            // debounce: wait for any filesystem activity to calm down
+            while let Ok(_) = fs_rx.recv_timeout(debounce) {
+            }
+
+            let sp = span!(Level::INFO, "shader build");
+            let _ent = sp.enter();
+
+            info!("rebuilding");
+            match SpirvBuilder::new("./shaders", "spirv-unknown-vulkan1.1")
+                .print_metadata(MetadataPrintout::None)
+                .build()
+            {
+                Ok(built) => {
+                    info!(result = ?built, "successfully built shaders");
+                    let path = built.module.unwrap_single();
+                    let spirv = fs::read(path).expect("build successful; artifact should exist");
+
+                    let _ = send_spirv.lock().unwrap().replace(spirv);
+                },
+                Err(err) => error!(error = ?err, "error rebuilding"),
+            }
+
+            drop(_ent);
+        }
+    });
 
     let mut gfx_state = pollster::block_on(GfxState::new(&window))?;
     let mut imgui = imgui::Context::create();
@@ -65,6 +118,10 @@ fn main() -> Result<()> {
                 match gfx_state.swapchain.get_current_frame() {
                     Ok(frame) => {
                         im_pipe.platform.prepare_frame(imgui.io_mut(), &window).expect("couldn't prepare imgui frame");
+
+                        if let Some(spirv) = new_spirv.lock().unwrap().take() {
+                            gfx_state.load_shader_code(&spirv);
+                        }
 
                         gfx_state.update();
                         gfx_state.render(&frame.output.view);
