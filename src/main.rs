@@ -5,6 +5,7 @@
 use std::{fs, path::Path, sync::{Arc, Mutex, mpsc::channel}, thread, time::{Duration, Instant}};
 
 use anyhow::Result;
+use imgui::im_str;
 use notify::{RecursiveMode, Watcher};
 use spirv_builder::{MetadataPrintout, SpirvBuilder};
 use tracing::{Level, error, info, span};
@@ -15,8 +16,8 @@ use winit::{
 };
 
 mod render;
-mod shaderffi;
 use render::{GfxState, ImguiPipeline};
+
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -86,6 +87,7 @@ fn main() -> Result<()> {
 
 
     let mut last_frame = Instant::now();
+    let mut render_step_cnt = false;
     evt_loop.run(move |event, _, ctl_flow| {
         match event {
             Event::WindowEvent {
@@ -128,8 +130,10 @@ fn main() -> Result<()> {
                         gfx_state.render(&frame.output.view);
 
                         let ui = imgui.frame();
-                        let mut op = true;
-                        ui.show_demo_window(&mut op);
+                        imgui::Window::new(im_str!("trace control"))
+                            .size([300., 100.], imgui::Condition::FirstUseEver)
+                            .build(&ui, || {
+                            });
 
                         im_pipe.platform.prepare_render(&ui, &window);
 

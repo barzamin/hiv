@@ -844,6 +844,7 @@ dependencies = [
  "imgui-winit-support",
  "notify",
  "pollster",
+ "shaders-isomorphic",
  "spirv-builder",
  "tracing",
  "tracing-subscriber",
@@ -1684,6 +1685,14 @@ dependencies = [
 
 [[package]]
 name = "shaders"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "spirv-std",
+]
+
+[[package]]
+name = "shaders-isomorphic"
 version = "0.1.0"
 dependencies = [
  "bytemuck",

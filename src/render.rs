@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use crate::shaderffi::ShaderConstants;
+use shaders_isomorphic::ShaderConstants;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 #[allow(dead_code)]

@@ -20,7 +20,6 @@ use spirv_std::glam::swizzles::*;
 use bytemuck::{Pod, Zeroable};
 
 mod hgsdf;
-
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 #[repr(C)]
 pub struct ShaderConstants {
@@ -48,9 +47,9 @@ struct BasicScene;
 impl Scene for BasicScene {
     fn sdf(&self, pos: Vec3) -> f32 {
         // (pos - vec3(0., 0., 10.)).length() - 3.0
-        hgsdf::f_cylinder(pos - vec3(0., -3., 10.), 1.0, 2.0)
-            .min(hgsdf::f_sphere(pos - vec3(5., 0., 15.), 2.0))
-            .min(hgsdf::f_torus(pos - vec3(-3., -3., 13.), 0.5, 2.0))
+        hgsdf::f_cylinder(pos - vec3(0., 0., 1.), 1.0, 2.0)
+            .min(hgsdf::f_sphere(pos - vec3(5., 0., 2.), 2.0))
+            .min(hgsdf::f_torus(pos - vec3(-3., 0., 3.), 0.5, 2.0))
     }
 }
 
@@ -136,7 +135,7 @@ pub fn main_fs(
     let ssize = vec2(constants.width_px as f32, constants.height_px as f32);
     let uv = screen2uv(in_frag_coord, ssize);
 
-    let cam = Camera::new_pointing_at(vec3(0., 0., -1.), vec3(0., 0., 0.), 2.);
+    let cam = Camera::new_pointing_at(vec3(0., 10., -10.), vec3(0., 0., 0.), 2.);
 
     *output = render(cam.root(), cam.ray(uv)).extend(1.);
 }
