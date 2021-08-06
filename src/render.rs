@@ -211,7 +211,7 @@ pub struct ImguiPipeline {
 impl ImguiPipeline {
     pub fn new(imgui: &mut imgui::Context, window: &Window, device: &wgpu::Device, queue: &wgpu::Queue, texture_format: wgpu::TextureFormat) -> Self {
         let mut platform = imgui_winit_support::WinitPlatform::init(imgui);
-        platform.attach_window(imgui.io_mut(), &window, imgui_winit_support::HiDpiMode::Default);
+        platform.attach_window(imgui.io_mut(), &window, imgui_winit_support::HiDpiMode::Rounded);
 
         let renderer = imgui_wgpu::Renderer::new(imgui, device, queue, imgui_wgpu::RendererConfig {
             texture_format,

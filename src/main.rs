@@ -69,22 +69,23 @@ fn main() -> Result<()> {
 
     let mut gfx_state = pollster::block_on(GfxState::new(&window))?;
     let mut imgui = imgui::Context::create();
+    let mut im_pipe = ImguiPipeline::new(&mut imgui, &window, &gfx_state.device, &gfx_state.queue, gfx_state.sc_desc.format);
     imgui.set_ini_filename(None);
 
-    let font_size = (13.0 * window.scale_factor()) as f32;
-    imgui.io_mut().font_global_scale = (1.0/window.scale_factor()) as f32;
+    let hidpi_factor = im_pipe.platform.hidpi_factor();
+    let font_size = (13.0 * hidpi_factor) as f32;
     imgui.fonts().add_font(&[imgui::FontSource::DefaultFontData {
         config: Some(imgui::FontConfig {
-            oversample_h: 1,
-            pixel_snap_h: true,
+            // oversample_h: 1,
+            // pixel_snap_h: true,
             size_pixels: font_size,
             ..Default::default()
         }),
     }]);
-    let mut im_pipe = ImguiPipeline::new(&mut imgui, &window, &gfx_state.device, &gfx_state.queue, gfx_state.sc_desc.format);
+    imgui.io_mut().font_global_scale = (1.0/hidpi_factor) as f32;
+
 
     let mut last_frame = Instant::now();
-    let mut last_cursor = None;
     evt_loop.run(move |event, _, ctl_flow| {
         match event {
             Event::WindowEvent {
@@ -106,6 +107,7 @@ fn main() -> Result<()> {
             }
 
             Event::MainEventsCleared => {
+                im_pipe.platform.prepare_frame(imgui.io_mut(), &window).expect("couldn't prepare imgui frame");
                 window.request_redraw(); // always request a new frame
             }
 
@@ -117,7 +119,6 @@ fn main() -> Result<()> {
 
                 match gfx_state.swapchain.get_current_frame() {
                     Ok(frame) => {
-                        im_pipe.platform.prepare_frame(imgui.io_mut(), &window).expect("couldn't prepare imgui frame");
 
                         if let Some(spirv) = new_spirv.lock().unwrap().take() {
                             gfx_state.load_shader_code(&spirv);
@@ -130,10 +131,7 @@ fn main() -> Result<()> {
                         let mut op = true;
                         ui.show_demo_window(&mut op);
 
-                        if last_cursor != Some(ui.mouse_cursor()) {
-                            last_cursor = Some(ui.mouse_cursor());
-                            im_pipe.platform.prepare_render(&ui, &window);
-                        }
+                        im_pipe.platform.prepare_render(&ui, &window);
 
                         im_pipe.render(ui.render(), &gfx_state.device, &gfx_state.queue, &frame.output.view);
                     },
